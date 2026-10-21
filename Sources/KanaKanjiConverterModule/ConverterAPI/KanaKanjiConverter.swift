@@ -516,7 +516,8 @@ public final class KanaKanjiConverter {
         self.dicdataStoreState.saveMemory()
     }
 
-    /// 確定操作後の学習メモリの更新を確定させます。
+    /// 候補の各要素と読み・表記・左右の連接IDが一致する学習データを削除します。
+    /// 削除結果は永続化されます。
     public func forgetMemory(_ candidate: Candidate) {
         self.dicdataStoreState.forgetMemory(candidate)
     }

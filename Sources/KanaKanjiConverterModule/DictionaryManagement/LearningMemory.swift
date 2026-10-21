@@ -9,6 +9,20 @@
 import Foundation
 import SwiftUtils
 
+private struct LearningMemoryKey: Hashable {
+    let ruby: String
+    let word: String
+    let lcid: Int
+    let rcid: Int
+
+    init(_ element: DicdataElement) {
+        self.ruby = element.ruby
+        self.word = element.word
+        self.lcid = element.lcid
+        self.rcid = element.rcid
+    }
+}
+
 private struct MetadataElement: CustomDebugStringConvertible {
     init(day: UInt16, count: UInt8) {
         self.lastUsedDay = day
@@ -211,7 +225,7 @@ struct LongTermLearningMemory {
 
         debug("LongTermLearningMemory merge entryCount", entryCount, ltMetadata.count)
 
-        let forgetTargetWords = Set(forgetTargets.map { $0.word })
+        let forgetTargetKeys = Set(forgetTargets.map(LearningMemoryKey.init))
         // それぞれのloudstxt3ファイルに対して処理を行う
         shards: for loudstxtIndex in 0 ..< (Int(entryCount) + txtFileSplit - 1) / txtFileSplit {
             let url = loudsTxt3FileURL("\(loudstxtIndex)", asTemporaryFile: false, directoryURL: directoryURL)
@@ -249,8 +263,7 @@ struct LongTermLearningMemory {
                 var newDicdata: [DicdataElement] = []
                 var newMetadata: [MetadataElement] = []
                 for (dicdataElement, metadataElement) in zip(elements, metadata) {
-                    // 忘却対象である場合は弾く（粗いチェック）
-                    if forgetTargetWords.contains(dicdataElement.word) {
+                    if forgetTargetKeys.contains(LearningMemoryKey(dicdataElement)) {
                         debug("LongTermLearningMemory merge stopped because it is a forget target", dicdataElement)
                         continue
                     }
@@ -467,7 +480,7 @@ struct TemporalLearningMemoryTrie {
             }
         }
         for (dicdataElement, metadataElement) in zip(dicdata, metadata) {
-            if let dataIndex = nodes[index].dataIndices.first(where: {Self.sameDicdataIfRubyIsEqual(left: self.dicdata[$0], right: dicdataElement)}) {
+            if let dataIndex = nodes[index].dataIndices.first(where: {LearningMemoryKey(self.dicdata[$0]) == LearningMemoryKey(dicdataElement)}) {
                 // すでにnodes[index]に同じデータが存在している場合、カウントを加算し、最後に使った日を後の方に変更する
                 withMutableValue(&self.metadata[dataIndex]) { currentMetadata in
                     currentMetadata.lastUsedDay = max(currentMetadata.lastUsedDay, metadataElement.lastUsedDay)
@@ -489,11 +502,6 @@ struct TemporalLearningMemoryTrie {
         }
     }
 
-    /// ルビが同じだとわかっている場合に2つのDicdataElementが同じものか判定する関数
-    private static func sameDicdataIfRubyIsEqual(left: DicdataElement, right: DicdataElement) -> Bool {
-        left.lcid == right.lcid && left.rcid == right.rcid && left.word == right.word
-    }
-
     mutating func memorize(dicdataElement: DicdataElement, chars: [UInt8]) {
         // Reject before creating nodes or metadata, including synthesized phrase entries.
         guard Loudstxt3Builder.isValidText(ruby: dicdataElement.ruby, word: dicdataElement.word) else {
@@ -512,7 +520,7 @@ struct TemporalLearningMemoryTrie {
         }
         // 雑な設定だが200年くらいは持つのでヨシ。
         let day = LearningManager.today
-        if let dataIndex = nodes[index].dataIndices.first(where: {Self.sameDicdataIfRubyIsEqual(left: self.dicdata[$0], right: dicdataElement)}) {
+        if let dataIndex = nodes[index].dataIndices.first(where: {LearningMemoryKey(self.dicdata[$0]) == LearningMemoryKey(dicdataElement)}) {
             withMutableValue(&self.metadata[dataIndex]) {
                 $0.count += min(.max - $0.count, 1)
                 $0.lastUsedDay = day
@@ -544,10 +552,8 @@ struct TemporalLearningMemoryTrie {
                 return false
             }
         }
-        // 存在する場合
-        // 判定を緩めにする（表層形が一致すればすべて削除する）
         nodes[index].dataIndices.removeAll {
-            self.dicdata[$0].word == dicdataElement.word
+            LearningMemoryKey(self.dicdata[$0]) == LearningMemoryKey(dicdataElement)
         }
         return true
     }

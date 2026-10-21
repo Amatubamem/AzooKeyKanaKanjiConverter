@@ -79,20 +79,33 @@ final class TemporalLearningMemoryTrieTests: XCTestCase {
         XCTAssertTrue(trie.perfectMatch(chars: charIDs).isEmpty)
     }
 
-    func testCoarseForget() throws {
+    func testForgetMatchesReadingAndConnectionIDs() throws {
         var trie = TemporalLearningMemoryTrie()
-        let element1 = DicdataElement(word: "テスター", ruby: "テスター", cid: CIDData.一般名詞.cid, mid: MIDData.一般.mid, value: -10)
-        let element2 = DicdataElement(word: "テスター", ruby: "テスター", cid: CIDData.固有名詞.cid, mid: MIDData.一般.mid, value: -10)
-        let charIDs = chars(for: "テスター")
+        let target = DicdataElement(word: "テスト", ruby: "テスト", cid: CIDData.一般名詞.cid, mid: MIDData.一般.mid, value: -10)
+        var differentRuby = target
+        differentRuby.ruby = "テスター"
+        var differentWord = target
+        differentWord.word = "テスター"
+        var differentLeftID = target
+        differentLeftID.lcid = CIDData.固有名詞.cid
+        var differentRightID = target
+        differentRightID.rcid = CIDData.固有名詞.cid
+        let retained = [differentRuby, differentWord, differentLeftID, differentRightID]
 
-        trie.memorize(dicdataElement: element1, chars: charIDs)
-        trie.memorize(dicdataElement: element2, chars: charIDs)
+        for element in [target] + retained {
+            trie.memorize(dicdataElement: element, chars: chars(for: element.ruby))
+        }
+        var forgetTarget = target
+        forgetTarget.mid += 1
+        forgetTarget.adjust = 2
+        forgetTarget.metadata = .isLearned
+        XCTAssertTrue(trie.forget(dicdataElement: forgetTarget, chars: chars(for: target.ruby)))
 
-        // 単語としては2種類存在
-        XCTAssertEqual(trie.perfectMatch(chars: charIDs).count, 2)
-
-        // forgetする場合、両方が同時に削除される（表層形の一致で判断＝粗い一致）
-        XCTAssertTrue(trie.forget(dicdataElement: element1, chars: charIDs))
-        XCTAssertTrue(trie.perfectMatch(chars: charIDs).isEmpty)
+        var expected = retained
+        for index in expected.indices {
+            expected[index].metadata = .isLearned
+        }
+        let remaining = trie.perfectMatch(chars: chars(for: target.ruby)) + trie.perfectMatch(chars: chars(for: differentRuby.ruby))
+        XCTAssertEqual(Set(remaining), Set(expected))
     }
 }

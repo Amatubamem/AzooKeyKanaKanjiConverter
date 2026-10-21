@@ -197,40 +197,95 @@ final class LearningMemoryTests: XCTestCase {
         XCTAssertFalse(dicdata2.contains { $0.word == element.word && $0.ruby == element.ruby })
     }
 
-    func testCoarseForgetMemory() throws {
-        // ForgetMemoryは「粗い」チェックを行うため、品詞が異なっていても同時に忘却される
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("LearningManagerPersistence-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: dir) }
-        let dicdataStore = DicdataStore(dictionaryURL: Self.resourceURL)
+    private func storedMemory(at directoryURL: URL) throws -> [DicdataElement: Data] {
+        let data = try Data(contentsOf: directoryURL.appendingPathComponent("memory0.loudstxt3"))
+        let metadata = try Data(contentsOf: directoryURL.appendingPathComponent("memory.memorymetadata"))
+        let count = try XCTUnwrap(LOUDS.loudstxt3EntryCount(binary: data))
+        var offset = 4
+        var result: [DicdataElement: Data] = [:]
+        for index in 0 ..< count {
+            let elements = LOUDS.parseLoudstxt3Binary(binary: data, indices: [index])
+            XCTAssertEqual(Int(metadata[offset]), elements.count)
+            offset += 1
+            for element in elements {
+                result[element] = metadata.subdata(in: offset ..< offset + 5)
+                offset += 5
+            }
+        }
+        XCTAssertEqual(offset, metadata.count)
+        return result
+    }
 
-        let config = self.getConfigForMemoryTest(memoryURL: dir)
-        let state = dicdataStore.prepareState()
-        _ = state.learningMemoryManager.updateConfig(config)
-        let element = DicdataElement(word: "テスト", ruby: "テスト", cid: CIDData.一般名詞.cid, mid: MIDData.一般.mid, value: -10)
-        state.learningMemoryManager.update(data: [element])
-        let differentCidElement = DicdataElement(word: "テスト", ruby: "テスト", cid: CIDData.固有名詞.cid, mid: MIDData.一般.mid, value: -10)
-        state.learningMemoryManager.update(data: [differentCidElement])
-        state.learningMemoryManager.save()
-
-        let charIDs = "テスト".map { dicdataStore.character2charId($0) }
-        let indices = dicdataStore.perfectMatchingSearch(query: "memory", charIDs: charIDs, state: state)
-        let dicdata = dicdataStore.getDicdataFromLoudstxt3(identifier: "memory", indices: indices, state: state)
-        XCTAssertFalse(dicdata.isEmpty)
-        XCTAssertEqual(dicdata.count { $0.word == element.word && $0.ruby == element.ruby }, 2)
-
-        state.forgetMemory(
-            Candidate(
-                text: element.word,
-                value: element.value(),
-                composingCount: .inputCount(3),
-                lastMid: element.mid,
-                data: [element]
+    func testForgetMemoryPreservesOtherEntriesAndMetadata() throws {
+        for saveBeforeForgetting in [false, true] {
+            let dir = FileManager.default.temporaryDirectory.appendingPathComponent("LearningManagerPersistence-\(UUID().uuidString)", isDirectory: true)
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: dir) }
+            let dicdataStore = DicdataStore(dictionaryURL: Self.resourceURL)
+            let state = dicdataStore.prepareState()
+            _ = state.learningMemoryManager.updateConfig(getConfigForMemoryTest(memoryURL: dir))
+            let target = DicdataElement(word: "テスト", ruby: "テスト", cid: CIDData.一般名詞.cid, mid: MIDData.一般.mid, value: -10)
+            var differentRuby = target
+            differentRuby.ruby = "テスター"
+            var differentWord = target
+            differentWord.word = "テスター"
+            var differentLeftID = target
+            differentLeftID.lcid = CIDData.固有名詞.cid
+            var differentRightID = target
+            differentRightID.rcid = CIDData.固有名詞.cid
+            let retained = [differentRuby, differentWord, differentLeftID, differentRightID]
+            for element in [target] + retained {
+                for _ in 0 ..< 3 {
+                    state.learningMemoryManager.update(data: [element])
+                }
+            }
+            var previousMetadata: [DicdataElement: Data] = [:]
+            if saveBeforeForgetting {
+                XCTAssertTrue(state.learningMemoryManager.save())
+                let metadataURL = dir.appendingPathComponent("memory.memorymetadata")
+                var metadata = try Data(contentsOf: metadataURL)
+                let yesterday = LearningManager.today - 1
+                var offset = 4
+                while offset < metadata.count {
+                    let count = Int(metadata[offset])
+                    offset += 1
+                    for _ in 0 ..< count {
+                        for dayOffset in [0, 2] {
+                            metadata[offset + dayOffset] = UInt8(truncatingIfNeeded: yesterday)
+                            metadata[offset + dayOffset + 1] = UInt8(truncatingIfNeeded: yesterday >> 8)
+                        }
+                        offset += 5
+                    }
+                }
+                try metadata.write(to: metadataURL)
+                previousMetadata = try storedMemory(at: dir)
+                state.learningMemoryManager.update(data: [target])
+            }
+            var forgetTarget = target
+            forgetTarget.mid += 1
+            forgetTarget.adjust = 2
+            forgetTarget.metadata = .isLearned
+            state.forgetMemory(
+                Candidate(text: target.word, value: target.value(), composingCount: .inputCount(3), lastMid: target.mid, data: [forgetTarget])
             )
-        )
-
-        let indices2 = dicdataStore.perfectMatchingSearch(query: "memory", charIDs: charIDs, state: state)
-        let dicdata2 = dicdataStore.getDicdataFromLoudstxt3(identifier: "memory", indices: indices2, state: state)
-        XCTAssertFalse(dicdata2.contains { $0.word == element.word && $0.ruby == element.ruby })
+            let remaining = try storedMemory(at: dir)
+            XCTAssertEqual(Set(remaining.keys), Set(retained))
+            for element in retained {
+                let metadata = try XCTUnwrap(remaining[element])
+                XCTAssertEqual(metadata[4], 3)
+                if saveBeforeForgetting {
+                    XCTAssertEqual(metadata, previousMetadata[element])
+                }
+                let charIDs = element.ruby.map { dicdataStore.character2charId($0) }
+                let indices = dicdataStore.perfectMatchingSearch(query: "memory", charIDs: charIDs, state: state)
+                let dicdata = dicdataStore.getDicdataFromLoudstxt3(identifier: "memory", indices: indices, state: state)
+                var learnedElement = element
+                learnedElement.metadata = .isLearned
+                var learnedTarget = target
+                learnedTarget.metadata = .isLearned
+                XCTAssertTrue(dicdata.contains(learnedElement))
+                XCTAssertFalse(dicdata.contains(learnedTarget))
+            }
+        }
     }
 }
