@@ -211,7 +211,6 @@ struct LongTermLearningMemory {
 
         debug("LongTermLearningMemory merge entryCount", entryCount, ltMetadata.count)
 
-        let forgetTargetWords = Set(forgetTargets.map { $0.word })
         // それぞれのloudstxt3ファイルに対して処理を行う
         shards: for loudstxtIndex in 0 ..< (Int(entryCount) + txtFileSplit - 1) / txtFileSplit {
             let url = loudsTxt3FileURL("\(loudstxtIndex)", asTemporaryFile: false, directoryURL: directoryURL)
@@ -249,8 +248,11 @@ struct LongTermLearningMemory {
                 var newDicdata: [DicdataElement] = []
                 var newMetadata: [MetadataElement] = []
                 for (dicdataElement, metadataElement) in zip(elements, metadata) {
-                    // 忘却対象である場合は弾く（粗いチェック）
-                    if forgetTargetWords.contains(dicdataElement.word) {
+                    // 学習時と同じキーに一致する項目だけを削除する
+                    if forgetTargets.contains(where: {
+                        $0.ruby == dicdataElement.ruby &&
+                        TemporalLearningMemoryTrie.sameDicdataIfRubyIsEqual(left: $0, right: dicdataElement)
+                    }) {
                         debug("LongTermLearningMemory merge stopped because it is a forget target", dicdataElement)
                         continue
                     }
@@ -490,7 +492,7 @@ struct TemporalLearningMemoryTrie {
     }
 
     /// ルビが同じだとわかっている場合に2つのDicdataElementが同じものか判定する関数
-    private static func sameDicdataIfRubyIsEqual(left: DicdataElement, right: DicdataElement) -> Bool {
+    fileprivate static func sameDicdataIfRubyIsEqual(left: DicdataElement, right: DicdataElement) -> Bool {
         left.lcid == right.lcid && left.rcid == right.rcid && left.word == right.word
     }
 
@@ -545,9 +547,8 @@ struct TemporalLearningMemoryTrie {
             }
         }
         // 存在する場合
-        // 判定を緩めにする（表層形が一致すればすべて削除する）
         nodes[index].dataIndices.removeAll {
-            self.dicdata[$0].word == dicdataElement.word
+            Self.sameDicdataIfRubyIsEqual(left: self.dicdata[$0], right: dicdataElement)
         }
         return true
     }

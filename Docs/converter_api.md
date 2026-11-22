@@ -55,5 +55,12 @@ converter.commitUpdateLearningData()   // 永続化
 converter.resetMemory()
 ```
 
+### `forgetMemory(_:)`
+変換候補に含まれる学習エントリのうち、読み・表記・左右の接続IDが一致するものだけを削除します。削除は直ちに永続化されます。
+
+```swift
+converter.forgetMemory(candidate)
+```
+
 ### `stopComposition()`
 内部状態のキャッシュをリセットします。入力の区切りで呼ぶと安定します。
