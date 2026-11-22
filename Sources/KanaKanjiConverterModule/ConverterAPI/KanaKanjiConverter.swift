@@ -517,8 +517,8 @@ public final class KanaKanjiConverter {
     }
 
     /// 確定操作後の学習メモリの更新を確定させます。
-    public func forgetMemory(_ candidate: Candidate) {
-        self.dicdataStoreState.forgetMemory(candidate)
+    public func forgetMemory(_ candidate: Candidate, strict: Bool = false) {
+        self.dicdataStoreState.forgetMemory(candidate, strict: strict)
     }
 
     /// 確定操作後の学習メモリの更新を確定させます。

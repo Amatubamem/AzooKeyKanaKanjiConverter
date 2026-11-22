@@ -95,4 +95,16 @@ final class TemporalLearningMemoryTrieTests: XCTestCase {
         XCTAssertTrue(trie.forget(dicdataElement: element1, chars: charIDs))
         XCTAssertTrue(trie.perfectMatch(chars: charIDs).isEmpty)
     }
+    func testPreciseForgetPreservesOtherConnectionID() {
+        var trie = TemporalLearningMemoryTrie()
+        let target = DicdataElement(word: "明日", ruby: "テスト", cid: CIDData.一般名詞.cid, mid: MIDData.一般.mid, value: -10)
+        let other = DicdataElement(word: "明日", ruby: "テスト", cid: CIDData.固有名詞.cid, mid: MIDData.一般.mid, value: -10)
+        let charIDs = chars(for: target.ruby)
+        trie.memorize(dicdataElement: target, chars: charIDs)
+        trie.memorize(dicdataElement: other, chars: charIDs)
+        XCTAssertEqual(trie.perfectMatch(chars: charIDs).count, 2)
+        XCTAssertTrue(trie.forget(dicdataElement: target, chars: charIDs, strict: true))
+        XCTAssertEqual(trie.perfectMatch(chars: charIDs).map(\.lcid), [other.lcid])
+    }
+
 }

@@ -138,8 +138,8 @@ package final class DicdataStoreState {
         self.resetMemoryLOUDSCache()
     }
 
-    func forgetMemory(_ candidate: Candidate) {
-        self.learningMemoryManager.forgetMemory(data: candidate.data)
+    func forgetMemory(_ candidate: Candidate, strict: Bool = false) {
+        self.learningMemoryManager.forgetMemory(data: candidate.data, strict: strict)
         self.resetMemoryLOUDSCache()
     }
 

@@ -182,7 +182,7 @@ struct LongTermLearningMemory {
     }
 
     /// 一時記憶と長期記憶の学習データをマージする
-    static func merge(tempTrie: consuming TemporalLearningMemoryTrie, forgetTargets: [DicdataElement] = [], directoryURL: URL, maxMemoryCount: Int, char2UInt8: [Character: UInt8]) throws {
+    static func merge(tempTrie: consuming TemporalLearningMemoryTrie, forgetTargets: [DicdataElement] = [], strict: Bool = false, directoryURL: URL, maxMemoryCount: Int, char2UInt8: [Character: UInt8]) throws {
         // MARK: `.pause`ファイルが存在する場合、`merge`を行う前に`.2`ファイルの復活を試み、失敗した場合は`merge`を諦める。
         if fileExist(pauseFileURL(directoryURL: directoryURL)) {
             debug("LongTermLearningMemory merge collapsion detected, trying recovery...")
@@ -249,8 +249,12 @@ struct LongTermLearningMemory {
                 var newDicdata: [DicdataElement] = []
                 var newMetadata: [MetadataElement] = []
                 for (dicdataElement, metadataElement) in zip(elements, metadata) {
-                    // 忘却対象である場合は弾く（粗いチェック）
-                    if forgetTargetWords.contains(dicdataElement.word) {
+                    // 表記一致か、学習時と同じキーによる精密一致を選択する
+                    if forgetTargetWords.contains(dicdataElement.word) &&
+                        (!strict || forgetTargets.contains {
+                            $0.ruby == dicdataElement.ruby &&
+                            TemporalLearningMemoryTrie.sameDicdataIfRubyIsEqual(left: $0, right: dicdataElement)
+                        }) {
                         debug("LongTermLearningMemory merge stopped because it is a forget target", dicdataElement)
                         continue
                     }
@@ -490,7 +494,7 @@ struct TemporalLearningMemoryTrie {
     }
 
     /// ルビが同じだとわかっている場合に2つのDicdataElementが同じものか判定する関数
-    private static func sameDicdataIfRubyIsEqual(left: DicdataElement, right: DicdataElement) -> Bool {
+    fileprivate static func sameDicdataIfRubyIsEqual(left: DicdataElement, right: DicdataElement) -> Bool {
         left.lcid == right.lcid && left.rcid == right.rcid && left.word == right.word
     }
 
@@ -534,7 +538,7 @@ struct TemporalLearningMemoryTrie {
     }
 
     @discardableResult
-    mutating func forget(dicdataElement: DicdataElement, chars: [UInt8]) -> Bool {
+    mutating func forget(dicdataElement: DicdataElement, chars: [UInt8], strict: Bool = false) -> Bool {
         var index = 0
         for char in chars {
             if let nextIndex = nodes[index].children[char] {
@@ -545,9 +549,9 @@ struct TemporalLearningMemoryTrie {
             }
         }
         // 存在する場合
-        // 判定を緩めにする（表層形が一致すればすべて削除する）
         nodes[index].dataIndices.removeAll {
-            self.dicdata[$0].word == dicdataElement.word
+            self.dicdata[$0].word == dicdataElement.word &&
+            (!strict || Self.sameDicdataIfRubyIsEqual(left: self.dicdata[$0], right: dicdataElement))
         }
         return true
     }
@@ -849,7 +853,7 @@ final class LearningManager {
     }
 
     /// データに含まれる語彙の学習をリセットする関数
-    func forgetMemory(data: [DicdataElement]) {
+    func forgetMemory(data: [DicdataElement], strict: Bool = false) {
         guard self.config.learningType.needUpdateMemory else {
             return
         }
@@ -858,7 +862,7 @@ final class LearningManager {
             guard let chars = Self.keyToChars(element.ruby, char2UInt8: char2UInt8) else {
                 continue
             }
-            self.temporaryMemory.forget(dicdataElement: element, chars: chars)
+            self.temporaryMemory.forget(dicdataElement: element, chars: chars, strict: strict)
         }
         guard let memoryURL = config.memoryURL else {
             debug(#function, "memoryURL is nil")
@@ -866,7 +870,7 @@ final class LearningManager {
         }
         // 2. longterm memoryを削除する
         do {
-            try LongTermLearningMemory.merge(tempTrie: self.temporaryMemory, forgetTargets: data, directoryURL: memoryURL, maxMemoryCount: self.config.maxMemoryCount, char2UInt8: char2UInt8)
+            try LongTermLearningMemory.merge(tempTrie: self.temporaryMemory, forgetTargets: data, strict: strict, directoryURL: memoryURL, maxMemoryCount: self.config.maxMemoryCount, char2UInt8: char2UInt8)
             // マージが済んだので、temporaryMemoryを空にする
             self.temporaryMemory = TemporalLearningMemoryTrie()
         } catch {

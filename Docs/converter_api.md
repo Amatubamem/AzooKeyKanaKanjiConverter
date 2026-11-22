@@ -55,5 +55,13 @@ converter.commitUpdateLearningData()   // 永続化
 converter.resetMemory()
 ```
 
+### `forgetMemory(_:strict:)`
+`strict: false`（既定値）では従来の粗い削除を行います。`strict: true` では読み・表記・左右の接続IDが一致する項目だけを削除します。削除は直ちに永続化されます。
+
+```swift
+converter.forgetMemory(candidate)               // 従来の粗い削除
+converter.forgetMemory(candidate, strict: true) // 厳密削除
+```
+
 ### `stopComposition()`
 内部状態のキャッシュをリセットします。入力の区切りで呼ぶと安定します。
