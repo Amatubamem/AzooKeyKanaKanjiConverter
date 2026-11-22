@@ -143,6 +143,11 @@ package final class DicdataStoreState {
         self.resetMemoryLOUDSCache()
     }
 
+    func forgetMemory(_ element: DicdataElement) {
+        self.learningMemoryManager.forgetMemory(data: [element], strict: true)
+        self.resetMemoryLOUDSCache()
+    }
+
     // 学習を反映する
     // TODO: previousの扱いを改善したい
     func updateLearningData(_ candidate: Candidate, with previous: DicdataElement?) {

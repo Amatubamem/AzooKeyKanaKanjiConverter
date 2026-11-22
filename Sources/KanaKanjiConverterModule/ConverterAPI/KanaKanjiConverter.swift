@@ -521,6 +521,11 @@ public final class KanaKanjiConverter {
         self.dicdataStoreState.forgetMemory(candidate)
     }
 
+    /// 指定した学習エントリだけを削除します（読み、表記、左右の接続IDで照合）。
+    public func forgetMemory(_ element: DicdataElement) {
+        self.dicdataStoreState.forgetMemory(element)
+    }
+
     /// 確定操作後の学習メモリの更新を確定させます。
     public func resetMemory() {
         self.dicdataStoreState.resetMemory()

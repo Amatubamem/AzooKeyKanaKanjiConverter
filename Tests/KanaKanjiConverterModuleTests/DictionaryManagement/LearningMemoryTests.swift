@@ -233,4 +233,29 @@ final class LearningMemoryTests: XCTestCase {
         let dicdata2 = dicdataStore.getDicdataFromLoudstxt3(identifier: "memory", indices: indices2, state: state)
         XCTAssertFalse(dicdata2.contains { $0.word == element.word && $0.ruby == element.ruby })
     }
+    func testPreciseForgetKeepsOtherReadingAndConnectionID() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("LearningMemoryPrecise-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = DicdataStore(dictionaryURL: Self.resourceURL)
+        let state = store.prepareState()
+        let manager = state.learningMemoryManager
+        _ = manager.updateConfig(getConfigForMemoryTest(memoryURL: dir))
+        let target = DicdataElement(word: "明日", ruby: "テスト", cid: CIDData.一般名詞.cid, mid: MIDData.一般.mid, value: -10)
+        let otherReading = DicdataElement(word: "明日", ruby: "テスター", cid: CIDData.一般名詞.cid, mid: MIDData.一般.mid, value: -10)
+        let otherID = DicdataElement(word: "明日", ruby: "テスト", cid: CIDData.固有名詞.cid, mid: MIDData.一般.mid, value: -10)
+        for item in [target, otherReading, otherID] { manager.update(data: [item]) }
+        XCTAssertTrue(manager.save())
+        for item in [target, otherReading, otherID] { manager.update(data: [item]) }
+        let candidate = Candidate(text: target.word, value: target.value(), composingCount: .inputCount(3), lastMid: target.mid, data: [target])
+        state.forgetMemory(target)
+        func stored(_ ruby: String) -> [DicdataElement] {
+            let ids = ruby.map { store.character2charId($0) }
+            let indices = store.perfectMatchingSearch(query: "memory", charIDs: ids, state: state)
+            return store.getDicdataFromLoudstxt3(identifier: "memory", indices: indices, state: state)
+        }
+        XCTAssertEqual(stored("テスト").filter { $0.word == "明日" }.map(\.lcid), [otherID.lcid])
+        XCTAssertEqual(stored("テスター").filter { $0.word == "明日" }.map(\.lcid), [otherReading.lcid])
+    }
+
 }

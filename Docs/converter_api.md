@@ -55,5 +55,13 @@ converter.commitUpdateLearningData()   // 永続化
 converter.resetMemory()
 ```
 
+### `forgetMemory(_:)`
+`Candidate` を渡すと従来の粗い削除を行います。`DicdataElement` を渡すと、読み・表記・左右の接続IDに一致する単一エントリを削除します。削除は直ちに永続化されます。
+
+```swift
+converter.forgetMemory(candidate) // 従来の粗い削除
+converter.forgetMemory(element)   // 厳密削除
+```
+
 ### `stopComposition()`
 内部状態のキャッシュをリセットします。入力の区切りで呼ぶと安定します。
